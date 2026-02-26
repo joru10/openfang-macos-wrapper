@@ -66,7 +66,7 @@ jobs:
           key: desktop-${{ matrix.platform.rust_target }}
 
       - name: Import macOS signing certificate
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && secrets.MAC_CERT_BASE64 != '' && secrets.MAC_CERT_PASSWORD != ''
         env:
           MAC_CERT_BASE64: ${{ secrets.MAC_CERT_BASE64 }}
           MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
@@ -220,7 +220,7 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/rightnow-ai/openfang:latest
-            ghcr.io/rightnow-ai/openfang:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/openfang:latest
+            ghcr.io/${{ github.repository_owner }}/openfang:${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
