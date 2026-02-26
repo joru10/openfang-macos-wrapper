@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 struct MainView: View {
@@ -20,12 +19,7 @@ struct MainView: View {
                 Button("Stop") { state.stopOpenFang() }
                     .disabled(state.controller.status == .stopped || state.controller.status == .stopping || state.controller.isBusy)
                 Button("Open Dashboard") { state.openDashboard() }
-                Button("Settings") {
-                    let opened = NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-                    if !opened {
-                        _ = NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
-                    }
-                }
+                Button("Settings") { state.isSettingsPresented = true }
                 if state.controller.status == .runningExternal {
                     Button("Adopt Control") { state.adoptControl() }
                         .disabled(!state.canAdoptControl())
@@ -57,6 +51,11 @@ struct MainView: View {
             }
         }
         .padding(16)
+        .sheet(isPresented: $state.isSettingsPresented) {
+            SettingsView()
+                .environmentObject(state)
+                .frame(width: 820, height: 620)
+        }
     }
 
     private var statusColor: Color {

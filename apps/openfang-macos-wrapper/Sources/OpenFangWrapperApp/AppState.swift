@@ -10,6 +10,7 @@ final class AppState: ObservableObject {
     @Published var logText = ""
     @Published var integrationResult = ""
     @Published var selectedTargetID: UUID?
+    @Published var isSettingsPresented = false
 
     let logManager = LogManager()
     let controller: OpenFangController
@@ -131,6 +132,75 @@ final class AppState: ObservableObject {
     func saveSecret(_ secret: String, account: String) {
         guard !account.isEmpty else { return }
         try? KeychainHelper.save(value: secret, account: account)
+    }
+
+    func setProviderKey(provider: LLMProvider, apiKey: String) {
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            integrationResult = "API key is empty."
+            return
+        }
+
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let openfangDir = home.appendingPathComponent(".openfang", isDirectory: true)
+        let envFile = openfangDir.appendingPathComponent(".env")
+        try? FileManager.default.createDirectory(at: openfangDir, withIntermediateDirectories: true)
+
+        var lines: [String] = []
+        if let existing = try? String(contentsOf: envFile, encoding: .utf8) {
+            lines = existing.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        }
+
+        let prefix = "\(provider.envKey)="
+        var replaced = false
+        for i in lines.indices {
+            if lines[i].hasPrefix(prefix) {
+                lines[i] = "\(prefix)\(key)"
+                replaced = true
+                break
+            }
+        }
+        if !replaced {
+            lines.append("\(prefix)\(key)")
+        }
+
+        let content = lines.joined(separator: "\n") + "\n"
+        do {
+            try content.write(to: envFile, atomically: true, encoding: .utf8)
+            integrationResult = "Saved \(provider.envKey) to \(envFile.path)."
+        } catch {
+            integrationResult = "Failed to save key: \(error.localizedDescription)"
+        }
+    }
+
+    func runDoctor() {
+        guard let binaryPath = resolveOpenFangPath() else {
+            integrationResult = "OpenFang CLI not found."
+            return
+        }
+
+        Task {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: binaryPath)
+            process.arguments = ["doctor"]
+            let out = Pipe()
+            process.standardOutput = out
+            process.standardError = out
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+                let data = try out.fileHandleForReading.readToEnd() ?? Data()
+                let text = String(decoding: data.prefix(3000), as: UTF8.self)
+                await MainActor.run {
+                    self.integrationResult = "Doctor exit: \(process.terminationStatus)\n\(text)"
+                }
+            } catch {
+                await MainActor.run {
+                    self.integrationResult = "Doctor failed: \(error.localizedDescription)"
+                }
+            }
+        }
     }
 
     func testSelectedWebhook() {

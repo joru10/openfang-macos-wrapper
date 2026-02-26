@@ -24,6 +24,40 @@ enum PayloadFormat: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum LLMProvider: String, Codable, CaseIterable, Identifiable {
+    case groq
+    case openai
+    case openrouter
+    case anthropic
+    case gemini
+    case deepseek
+    case google
+    case together
+    case mistral
+    case fireworks
+
+    var id: String { rawValue }
+
+    var envKey: String {
+        switch self {
+        case .groq: return "GROQ_API_KEY"
+        case .openai: return "OPENAI_API_KEY"
+        case .openrouter: return "OPENROUTER_API_KEY"
+        case .anthropic: return "ANTHROPIC_API_KEY"
+        case .gemini: return "GEMINI_API_KEY"
+        case .deepseek: return "DEEPSEEK_API_KEY"
+        case .google: return "GOOGLE_API_KEY"
+        case .together: return "TOGETHER_API_KEY"
+        case .mistral: return "MISTRAL_API_KEY"
+        case .fireworks: return "FIREWORKS_API_KEY"
+        }
+    }
+
+    var title: String {
+        rawValue.uppercased()
+    }
+}
+
 struct IntegrationTarget: Identifiable, Codable, Hashable {
     var id = UUID()
     var name: String

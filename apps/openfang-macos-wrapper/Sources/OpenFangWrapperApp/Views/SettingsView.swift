@@ -3,6 +3,8 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var state: AppState
     @State private var openClawSecretDraft = ""
+    @State private var provider: LLMProvider = .groq
+    @State private var providerKeyDraft = ""
     @State private var selectedTab = 0
 
     var body: some View {
@@ -14,6 +16,10 @@ struct SettingsView: View {
             integrationsTab
                 .tabItem { Text("Integrations") }
                 .tag(1)
+
+            providerTab
+                .tabItem { Text("Provider") }
+                .tag(2)
         }
         .padding(16)
     }
@@ -120,6 +126,42 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        }
+    }
+
+    private var providerTab: some View {
+        Form {
+            Text("Configure OpenFang LLM Provider")
+                .font(.headline)
+
+            Picker("Provider", selection: $provider) {
+                ForEach(LLMProvider.allCases) { p in
+                    Text(p.title).tag(p)
+                }
+            }
+
+            SecureField("API Key", text: $providerKeyDraft)
+
+            HStack {
+                Button("Save Provider Key") {
+                    state.setProviderKey(provider: provider, apiKey: providerKeyDraft)
+                    providerKeyDraft = ""
+                }
+                Button("Run OpenFang Doctor") {
+                    state.runDoctor()
+                }
+            }
+
+            Text("Writes \(provider.envKey) into ~/.openfang/.env")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            Text(state.integrationResult)
+                .font(.system(.footnote, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+                .background(Color(NSColor.textBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
         }
     }
 }
