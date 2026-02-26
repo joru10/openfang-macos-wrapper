@@ -29,7 +29,21 @@ final class AppState: ObservableObject {
         selectedTargetID = settings.integrationTargets.first?.id
 
         startLogTailLoop()
-        controller.detectExternalRunning(dashboardURL: settings.dashboardURL)
+        Task { [weak self] in
+            guard let self else { return }
+            await self.logManager.append("[\(Date())] ----- OpenFang Wrapper launched -----")
+            let healthy = await HealthChecker.isHealthy(urlString: self.settings.dashboardURL)
+            if healthy {
+                await MainActor.run {
+                    self.controller.status = .runningExternal
+                    self.controller.statusDetail = "Detected listener not started by app"
+                }
+            } else {
+                await MainActor.run {
+                    self.startOpenFang()
+                }
+            }
+        }
     }
 
     func startOpenFang() {

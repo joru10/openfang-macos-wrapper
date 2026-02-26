@@ -172,9 +172,17 @@ final class OpenFangController: ObservableObject {
 
             guard let line = String(data: data, encoding: .utf8), !line.isEmpty else { return }
             Task { [weak self] in
-                await self?.logManager.append("[\(label)] \(line.trimmingCharacters(in: .newlines))")
+                let clean = Self.stripANSIEscapeSequences(in: line.trimmingCharacters(in: .newlines))
+                await self?.logManager.append("[\(label)] \(clean)")
             }
         }
+    }
+
+    nonisolated private static func stripANSIEscapeSequences(in text: String) -> String {
+        let pattern = #"\u{001B}\[[0-9;]*[A-Za-z]"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "")
     }
 
     private func startHealthPolling(dashboardURL: String) {
