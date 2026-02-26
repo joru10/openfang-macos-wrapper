@@ -33,27 +33,47 @@ final class AppState: ObservableObject {
     }
 
     func startOpenFang() {
-        controller.start(binaryPath: settings.openFangPath, dashboardURL: settings.dashboardURL)
+        guard let binaryPath = resolveOpenFangPath() else {
+            controller.status = .error
+            controller.statusDetail = "OpenFang CLI not found. Install it first: curl -sSf https://openfang.sh | sh"
+            return
+        }
+        controller.start(binaryPath: binaryPath, dashboardURL: settings.dashboardURL)
     }
 
     func stopOpenFang() {
-        controller.stop(binaryPath: settings.openFangPath, dashboardURL: settings.dashboardURL)
+        guard let binaryPath = resolveOpenFangPath() else {
+            controller.status = .error
+            controller.statusDetail = "OpenFang CLI path missing. Set the binary in Settings."
+            return
+        }
+        controller.stop(binaryPath: binaryPath, dashboardURL: settings.dashboardURL)
     }
 
     func stopOpenFangAndWait() async -> Bool {
-        await withCheckedContinuation { continuation in
-            controller.stop(binaryPath: settings.openFangPath, dashboardURL: settings.dashboardURL) { success in
+        guard let binaryPath = resolveOpenFangPath() else {
+            controller.status = .error
+            controller.statusDetail = "OpenFang CLI path missing. Set the binary in Settings."
+            return false
+        }
+        return await withCheckedContinuation { continuation in
+            controller.stop(binaryPath: binaryPath, dashboardURL: settings.dashboardURL) { success in
                 continuation.resume(returning: success)
             }
         }
     }
 
     func canAdoptControl() -> Bool {
-        controller.canAdoptControl(binaryPath: settings.openFangPath, dashboardURL: settings.dashboardURL)
+        guard let binaryPath = resolveOpenFangPath() else { return false }
+        return controller.canAdoptControl(binaryPath: binaryPath, dashboardURL: settings.dashboardURL)
     }
 
     func adoptControl() {
-        let adopted = controller.adoptControl(binaryPath: settings.openFangPath, dashboardURL: settings.dashboardURL)
+        guard let binaryPath = resolveOpenFangPath() else {
+            integrationResult = "OpenFang CLI path missing. Set the binary in Settings."
+            return
+        }
+        let adopted = controller.adoptControl(binaryPath: binaryPath, dashboardURL: settings.dashboardURL)
         if !adopted {
             integrationResult = "Unable to safely adopt external process control."
         }
@@ -170,5 +190,19 @@ final class AppState: ObservableObject {
                 try? await Task.sleep(nanoseconds: 800_000_000)
             }
         }
+    }
+
+    private func resolveOpenFangPath() -> String? {
+        if FileManager.default.isExecutableFile(atPath: settings.openFangPath) {
+            return settings.openFangPath
+        }
+        if let discovered = BinaryDiscovery.findOpenFangPath(),
+           FileManager.default.isExecutableFile(atPath: discovered) {
+            if settings.openFangPath != discovered {
+                settings.openFangPath = discovered
+            }
+            return discovered
+        }
+        return nil
     }
 }
