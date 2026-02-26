@@ -40,6 +40,25 @@ final class AppState: ObservableObject {
         controller.stop(binaryPath: settings.openFangPath, dashboardURL: settings.dashboardURL)
     }
 
+    func stopOpenFangAndWait() async -> Bool {
+        await withCheckedContinuation { continuation in
+            controller.stop(binaryPath: settings.openFangPath, dashboardURL: settings.dashboardURL) { success in
+                continuation.resume(returning: success)
+            }
+        }
+    }
+
+    func canAdoptControl() -> Bool {
+        controller.canAdoptControl(binaryPath: settings.openFangPath, dashboardURL: settings.dashboardURL)
+    }
+
+    func adoptControl() {
+        let adopted = controller.adoptControl(binaryPath: settings.openFangPath, dashboardURL: settings.dashboardURL)
+        if !adopted {
+            integrationResult = "Unable to safely adopt external process control."
+        }
+    }
+
     func openDashboard() {
         if controller.status == .stopped {
             startOpenFang()

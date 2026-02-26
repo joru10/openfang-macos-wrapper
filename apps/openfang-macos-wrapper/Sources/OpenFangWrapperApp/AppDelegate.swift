@@ -15,8 +15,11 @@ final class WrapperAppDelegate: NSObject, NSApplicationDelegate {
 
         switch state.settings.quitBehavior {
         case .stopAndQuit:
-            state.stopOpenFang()
-            return .terminateNow
+            Task { @MainActor in
+                let success = await state.stopOpenFangAndWait()
+                NSApp.reply(toApplicationShouldTerminate: success)
+            }
+            return .terminateLater
         case .leaveRunning:
             return .terminateNow
         case .ask:
@@ -29,8 +32,11 @@ final class WrapperAppDelegate: NSObject, NSApplicationDelegate {
 
             let response = alert.runModal()
             if response == .alertFirstButtonReturn {
-                state.stopOpenFang()
-                return .terminateNow
+                Task { @MainActor in
+                    let success = await state.stopOpenFangAndWait()
+                    NSApp.reply(toApplicationShouldTerminate: success)
+                }
+                return .terminateLater
             }
             if response == .alertSecondButtonReturn {
                 return .terminateNow

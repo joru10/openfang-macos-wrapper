@@ -6,6 +6,7 @@ Native SwiftUI macOS app wrapper for manual OpenFang lifecycle control with loos
 - Starts/stops OpenFang CLI (`openfang start`, `openfang stop`)
 - Health checks dashboard URL (`http://127.0.0.1:4200` default)
 - Tails logs from `~/Library/Logs/OpenFangWrapper/openfang.log`
+- Detects external OpenFang process and supports safe `Adopt Control`
 - Configures/tests webhook targets
 - Supports OpenClaw GW ingestion URL + E2E webhook test for Telegram forwarding
 
@@ -74,6 +75,8 @@ Minimum payload fields:
   - run `openfang init`
 - If stop fallback is needed:
   - app validates process identity before killing listener on port 4200
+- Quit behavior:
+  - `Stop and Quit` now waits for stop completion before app termination
 
 ## GitHub delivery (private joru10/openfang)
 If starting from this clone:

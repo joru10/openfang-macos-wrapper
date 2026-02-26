@@ -44,8 +44,14 @@ final class OpenFangController: ObservableObject {
             process.standardOutput = out
             process.standardError = err
 
-            startPipeReader(out.fileHandleForReading)
-            startPipeReader(err.fileHandleForReading)
+            attachPipeReader(out.fileHandleForReading, label: "stdout")
+            attachPipeReader(err.fileHandleForReading, label: "stderr")
+
+            process.terminationHandler = { [weak self] terminated in
+                Task { [weak self] in
+                    await self?.logManager.append("[\(Date())] openfang start process exited: \(terminated.terminationStatus)")
+                }
+            }
 
             do {
                 try process.run()
@@ -64,9 +70,13 @@ final class OpenFangController: ObservableObject {
         }
     }
 
-    func stop(binaryPath: String, dashboardURL: String) {
-        guard !isBusy else { return }
+    func stop(binaryPath: String, dashboardURL: String, completion: ((Bool) -> Void)? = nil) {
+        guard !isBusy else {
+            completion?(false)
+            return
+        }
         if status == .stopped || status == .stopping {
+            completion?(status == .stopped)
             return
         }
 
@@ -77,24 +87,28 @@ final class OpenFangController: ObservableObject {
         Task {
             await logManager.append("[\(Date())] Stopping OpenFang")
 
-            if await tryStopCommand(binaryPath: binaryPath) {
-                await verifyStopped(dashboardURL: dashboardURL)
+            if await tryStopCommand(binaryPath: binaryPath),
+               await verifyStopped(dashboardURL: dashboardURL) {
+                completion?(true)
                 return
             }
 
-            if await tryStopTrackedProcess(binaryPath: binaryPath) {
-                await verifyStopped(dashboardURL: dashboardURL)
+            if await tryStopTrackedProcess(binaryPath: binaryPath),
+               await verifyStopped(dashboardURL: dashboardURL) {
+                completion?(true)
                 return
             }
 
-            if await tryPortFallback(binaryPath: binaryPath) {
-                await verifyStopped(dashboardURL: dashboardURL)
+            if await tryPortFallback(binaryPath: binaryPath, dashboardURL: dashboardURL),
+               await verifyStopped(dashboardURL: dashboardURL) {
+                completion?(true)
                 return
             }
 
             status = .error
             statusDetail = "Stop failed"
             isBusy = false
+            completion?(false)
         }
     }
 
@@ -108,16 +122,48 @@ final class OpenFangController: ObservableObject {
         }
     }
 
+    func canAdoptControl(binaryPath: String, dashboardURL: String) -> Bool {
+        guard status == .runningExternal,
+              let port = dashboardPort(from: dashboardURL),
+              let listener = findListeningPID(port: port) else {
+            return false
+        }
+        return validatePID(listener.pid, containsPath: binaryPath)
+    }
+
+    func adoptControl(binaryPath: String, dashboardURL: String) -> Bool {
+        guard canAdoptControl(binaryPath: binaryPath, dashboardURL: dashboardURL),
+              let port = dashboardPort(from: dashboardURL),
+              let listener = findListeningPID(port: port) else {
+            return false
+        }
+
+        trackedPID = listener.pid
+        status = .running
+        statusDetail = "Adopted control for pid \(listener.pid)"
+        startHealthPolling(dashboardURL: dashboardURL)
+
+        Task {
+            await logManager.append("[\(Date())] Adopted external OpenFang process: pid=\(listener.pid)")
+        }
+        return true
+    }
+
     func shutdown() {
         healthTask?.cancel()
     }
 
-    private func startPipeReader(_ handle: FileHandle) {
+    private func attachPipeReader(_ handle: FileHandle, label: String) {
         handle.readabilityHandler = { [weak self] fileHandle in
-            guard let data = try? fileHandle.readToEnd(), !data.isEmpty,
-                  let line = String(data: data, encoding: .utf8), !line.isEmpty else { return }
+            let data = fileHandle.availableData
+            guard !data.isEmpty else {
+                fileHandle.readabilityHandler = nil
+                return
+            }
+
+            guard let line = String(data: data, encoding: .utf8), !line.isEmpty else { return }
             Task { [weak self] in
-                await self?.logManager.append(line.trimmingCharacters(in: .newlines))
+                await self?.logManager.append("[\(label)] \(line.trimmingCharacters(in: .newlines))")
             }
         }
     }
@@ -134,8 +180,10 @@ final class OpenFangController: ObservableObject {
 
                 if healthy {
                     await MainActor.run {
-                        self.status = .running
-                        self.statusDetail = "Healthy"
+                        if self.status != .stopping {
+                            self.status = .running
+                            self.statusDetail = "Healthy"
+                        }
                     }
                 } else if checks > 15, self.status == .starting {
                     await MainActor.run {
@@ -188,10 +236,27 @@ final class OpenFangController: ObservableObject {
         return true
     }
 
-    private func tryPortFallback(binaryPath: String) async -> Bool {
+    private func tryPortFallback(binaryPath: String, dashboardURL: String) async -> Bool {
+        guard let port = dashboardPort(from: dashboardURL),
+              let listener = findListeningPID(port: port) else {
+            return false
+        }
+
+        guard listener.command.lowercased().contains("openfang") || validatePID(listener.pid, containsPath: binaryPath) else {
+            await logManager.append("[\(Date())] Port \(port) listener did not match OpenFang")
+            return false
+        }
+
+        _ = kill(listener.pid, SIGTERM)
+        await logManager.append("[\(Date())] Fallback SIGTERM pid \(listener.pid) on port \(port)")
+        trackedPID = listener.pid
+        return true
+    }
+
+    private func findListeningPID(port: Int) -> (pid: Int32, command: String)? {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        proc.arguments = ["-iTCP:4200", "-sTCP:LISTEN", "-n", "-P", "-Fp", "-Fc"]
+        proc.arguments = ["-iTCP:\(port)", "-sTCP:LISTEN", "-n", "-P", "-Fp", "-Fc"]
 
         let out = Pipe()
         proc.standardOutput = out
@@ -200,32 +265,32 @@ final class OpenFangController: ObservableObject {
         do {
             try proc.run()
             proc.waitUntilExit()
-            guard let data = try out.fileHandleForReading.readToEnd(),
+            guard proc.terminationStatus == 0,
+                  let data = try out.fileHandleForReading.readToEnd(),
                   let text = String(data: data, encoding: .utf8) else {
-                return false
+                return nil
             }
 
             let lines = text.split(separator: "\n").map(String.init)
             var pid: Int32?
-            var cmd = ""
+            var command = ""
             for line in lines {
                 if line.hasPrefix("p") { pid = Int32(line.dropFirst()) }
-                if line.hasPrefix("c") { cmd = String(line.dropFirst()) }
+                if line.hasPrefix("c") { command = String(line.dropFirst()) }
+                if pid != nil, !command.isEmpty { break }
             }
 
-            guard let foundPID = pid else { return false }
-            guard cmd.lowercased().contains("openfang") || validatePID(foundPID, containsPath: binaryPath) else {
-                await logManager.append("[\(Date())] Port 4200 listener did not match OpenFang")
-                return false
-            }
-
-            _ = kill(foundPID, SIGTERM)
-            await logManager.append("[\(Date())] Fallback SIGTERM pid \(foundPID)")
-            return true
+            guard let foundPID = pid else { return nil }
+            return (foundPID, command)
         } catch {
-            await logManager.append("[\(Date())] lsof fallback failed: \(error.localizedDescription)")
-            return false
+            return nil
         }
+    }
+
+    private func dashboardPort(from dashboardURL: String) -> Int? {
+        guard let url = URL(string: dashboardURL) else { return 4200 }
+        if let port = url.port { return port }
+        return 4200
     }
 
     private func validatePID(_ pid: Int32, containsPath: String) -> Bool {
@@ -242,13 +307,15 @@ final class OpenFangController: ObservableObject {
             guard process.terminationStatus == 0,
                   let data = try out.fileHandleForReading.readToEnd(),
                   let command = String(data: data, encoding: .utf8) else { return false }
-            return command.contains(containsPath) || command.lowercased().contains("openfang")
+            let configuredPath = containsPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            let pathMatch = !configuredPath.isEmpty && command.contains(configuredPath)
+            return pathMatch || command.lowercased().contains("openfang")
         } catch {
             return false
         }
     }
 
-    private func verifyStopped(dashboardURL: String) async {
+    private func verifyStopped(dashboardURL: String) async -> Bool {
         healthTask?.cancel()
 
         for _ in 0 ..< 10 {
@@ -257,7 +324,9 @@ final class OpenFangController: ObservableObject {
                 status = .stopped
                 statusDetail = "Stopped"
                 isBusy = false
-                return
+                startProcess = nil
+                trackedPID = nil
+                return true
             }
             try? await Task.sleep(nanoseconds: 300_000_000)
         }
@@ -265,5 +334,6 @@ final class OpenFangController: ObservableObject {
         status = .error
         statusDetail = "Stop requested but service still reachable"
         isBusy = false
+        return false
     }
 }
