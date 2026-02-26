@@ -203,6 +203,63 @@ final class AppState: ObservableObject {
         }
     }
 
+    func configureLocalProvider(provider: String, model: String, baseURL: String) {
+        guard let binaryPath = resolveOpenFangPath() else {
+            integrationResult = "OpenFang CLI not found."
+            return
+        }
+
+        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedModel.isEmpty else {
+            integrationResult = "Model is required."
+            return
+        }
+        guard !trimmedURL.isEmpty else {
+            integrationResult = "Base URL is required."
+            return
+        }
+
+        let updates: [(String, String)] = [
+            ("default_model.provider", provider),
+            ("default_model.model", trimmedModel),
+            ("default_model.base_url", trimmedURL),
+            ("default_model.api_key_env", ""),
+        ]
+
+        Task {
+            for (key, value) in updates {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: binaryPath)
+                process.arguments = ["config", "set", key, value]
+                process.standardOutput = Pipe()
+                process.standardError = Pipe()
+
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                    if process.terminationStatus != 0 {
+                        let errData = try (process.standardError as? Pipe)?.fileHandleForReading.readToEnd() ?? Data()
+                        let errText = String(decoding: errData, as: UTF8.self)
+                        await MainActor.run {
+                            self.integrationResult = "Failed setting \(key): \(errText)"
+                        }
+                        return
+                    }
+                } catch {
+                    await MainActor.run {
+                        self.integrationResult = "Config update failed: \(error.localizedDescription)"
+                    }
+                    return
+                }
+            }
+
+            await MainActor.run {
+                self.integrationResult = "Configured local provider \(provider) with model \(trimmedModel)."
+            }
+        }
+    }
+
     func testSelectedWebhook() {
         guard let target = settings.integrationTargets.first(where: { $0.id == selectedTargetID }) else {
             integrationResult = "No target selected"

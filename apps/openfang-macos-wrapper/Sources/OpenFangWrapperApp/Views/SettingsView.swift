@@ -5,6 +5,9 @@ struct SettingsView: View {
     @State private var openClawSecretDraft = ""
     @State private var provider: LLMProvider = .groq
     @State private var providerKeyDraft = ""
+    @State private var localProvider = "lmstudio"
+    @State private var localModel = "local-model"
+    @State private var localBaseURL = "http://127.0.0.1:1234/v1"
     @State private var selectedTab = 0
 
     var body: some View {
@@ -162,6 +165,37 @@ struct SettingsView: View {
                 .padding(8)
                 .background(Color(NSColor.textBackgroundColor))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            Divider().padding(.vertical, 4)
+
+            Text("Use Local LLM (LM Studio / Ollama / vLLM)")
+                .font(.headline)
+
+            Picker("Local Provider", selection: $localProvider) {
+                Text("lmstudio").tag("lmstudio")
+                Text("ollama").tag("ollama")
+                Text("vllm").tag("vllm")
+            }
+            TextField("Model", text: $localModel)
+            TextField("Base URL", text: $localBaseURL)
+
+            HStack {
+                Button("Apply Local Provider") {
+                    state.configureLocalProvider(
+                        provider: localProvider,
+                        model: localModel,
+                        baseURL: localBaseURL
+                    )
+                }
+                Button("Preset: LM Studio") {
+                    localProvider = "lmstudio"
+                    localBaseURL = "http://127.0.0.1:1234/v1"
+                }
+            }
+
+            Text("LM Studio: start local server in LM Studio and set model to the loaded model id.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
     }
 }
