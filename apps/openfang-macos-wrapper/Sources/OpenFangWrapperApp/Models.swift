@@ -65,9 +65,11 @@ struct AppSettings: Codable {
 
 enum BinaryDiscovery {
     static func findOpenFangPath() -> String? {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
         let candidates = [
             "/opt/homebrew/bin/openfang",
             "/usr/local/bin/openfang",
+            "\(home)/.openfang/bin/openfang",
         ]
 
         for candidate in candidates where FileManager.default.isExecutableFile(atPath: candidate) {
@@ -76,7 +78,7 @@ enum BinaryDiscovery {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-lc", "which openfang"]
+        process.arguments = ["-lic", "which openfang"]
 
         let out = Pipe()
         process.standardOutput = out
