@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct MainView: View {
@@ -19,6 +20,9 @@ struct MainView: View {
                 Button("Stop") { state.stopOpenFang() }
                     .disabled(state.controller.status == .stopped || state.controller.status == .stopping || state.controller.isBusy)
                 Button("Open Dashboard") { state.openDashboard() }
+                Button("Settings") {
+                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                }
                 if state.controller.status == .runningExternal {
                     Button("Adopt Control") { state.adoptControl() }
                         .disabled(!state.canAdoptControl())

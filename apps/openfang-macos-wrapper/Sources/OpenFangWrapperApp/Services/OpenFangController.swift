@@ -51,6 +51,15 @@ final class OpenFangController: ObservableObject {
                 Task { [weak self] in
                     await self?.logManager.append("[\(Date())] openfang start process exited: \(terminated.terminationStatus)")
                 }
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if terminated.terminationStatus != 0, self.status == .starting {
+                        self.status = .error
+                        self.statusDetail = "OpenFang start failed (exit \(terminated.terminationStatus)). Run `openfang doctor` and configure provider API keys."
+                        self.isBusy = false
+                        self.healthTask?.cancel()
+                    }
+                }
             }
 
             do {
