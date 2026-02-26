@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var state: AppState
+    @Environment(\.dismiss) private var dismiss
     @State private var openClawSecretDraft = ""
     @State private var provider: LLMProvider = .groq
     @State private var providerKeyDraft = ""
@@ -11,18 +12,30 @@ struct SettingsView: View {
     @State private var selectedTab = 0
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            generalTab
-                .tabItem { Text("General") }
-                .tag(0)
+        VStack(spacing: 12) {
+            HStack {
+                Text("Settings")
+                    .font(.headline)
+                Spacer()
+                Button("Close") {
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
 
-            integrationsTab
-                .tabItem { Text("Integrations") }
-                .tag(1)
+            TabView(selection: $selectedTab) {
+                generalTab
+                    .tabItem { Text("General") }
+                    .tag(0)
 
-            providerTab
-                .tabItem { Text("Provider") }
-                .tag(2)
+                integrationsTab
+                    .tabItem { Text("Integrations") }
+                    .tag(1)
+
+                providerTab
+                    .tabItem { Text("Provider") }
+                    .tag(2)
+            }
         }
         .padding(16)
     }
